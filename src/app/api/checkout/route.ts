@@ -136,6 +136,8 @@ export async function POST(request: NextRequest) {
         ? Math.floor(new Date(submission.expiresAt).getTime() / 1000)
         : undefined,
       payment_intent_data: {
+        // Stripe emails a receipt to this address in live mode regardless of dashboard email settings.
+        receipt_email: submission.donor.email,
         description: `${content.campaignName} — ${count} name${count === 1 ? "" : "s"} — ${submission.donor.name}`,
         metadata
       },
