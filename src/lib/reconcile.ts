@@ -1,7 +1,7 @@
 import type Stripe from "stripe";
 
 import { getStripe } from "@/lib/stripe";
-import { getSubmissions, insertSubmission, markSubmissionPaid } from "@/lib/store";
+import { getSubmissions, insertSubmission, markSubmissionPaid, updateSubmission } from "@/lib/store";
 import type { Gender, KapparotName, Submission } from "@/types";
 
 export type SyncResult = {
@@ -48,6 +48,17 @@ function lineItemBreakdown(items: Stripe.LineItem[]) {
   return { perPersonCents, nameCount, extraDonationCents, feeCoverCents };
 }
 
+const UNKNOWN_DONOR = "Unknown donor";
+
+function donorFromSession(session: Stripe.Checkout.Session): Submission["donor"] {
+  const email = session.customer_details?.email || session.customer_email || "";
+  return {
+    name: session.customer_details?.name || session.metadata?.donorName || email || UNKNOWN_DONOR,
+    email,
+    phone: session.customer_details?.phone || undefined
+  };
+}
+
 function submissionFromSession(session: Stripe.Checkout.Session, items: Stripe.LineItem[]): Submission {
   const breakdown = lineItemBreakdown(items);
   const parsed = parseNames(session.metadata?.names);
@@ -69,11 +80,7 @@ function submissionFromSession(session: Stripe.Checkout.Session, items: Stripe.L
   return {
     id: session.metadata?.submissionId || `kap_stripe_${session.id.slice(-12)}`,
     status: "paid",
-    donor: {
-      name: session.customer_details?.name || session.metadata?.donorName || "Unknown donor",
-      email: session.customer_details?.email || session.customer_email || "",
-      phone: session.customer_details?.phone || undefined
-    },
+    donor: donorFromSession(session),
     names,
     pricePerPersonCents: breakdown.perPersonCents,
     namesTotalCents: breakdown.perPersonCents * names.length,
@@ -146,6 +153,17 @@ export async function syncFromStripe(): Promise<SyncResult> {
     const local = bySession.get(session.id) || byId.get(session.metadata?.submissionId || "");
 
     if (local?.status === "paid") {
+      // Backfill donor details on records recovered before the name was available.
+      if (local.donor.name === UNKNOWN_DONOR) {
+        const donor = donorFromSession(session);
+        if (donor.name !== UNKNOWN_DONOR) {
+          await updateSubmission(local.id, (submission) => {
+            submission.donor = donor;
+          });
+          result.markedPaid.push(local.id);
+          continue;
+        }
+      }
       result.alreadyCurrent += 1;
       continue;
     }
