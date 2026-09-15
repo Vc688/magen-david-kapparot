@@ -2,20 +2,12 @@ import { headers } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import type Stripe from "stripe";
 
+import { recordPaidSession } from "@/lib/reconcile";
 import { getStripe } from "@/lib/stripe";
-import {
-  hasProcessedStripeEvent,
-  markCheckoutExpired,
-  markStripeEventProcessed,
-  markSubmissionPaid
-} from "@/lib/store";
+import { hasProcessedStripeEvent, markCheckoutExpired, markStripeEventProcessed } from "@/lib/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function sessionSubmissionId(session: Stripe.Checkout.Session): string | undefined {
-  return session.metadata?.submissionId || session.client_reference_id || undefined;
-}
 
 export async function POST(request: NextRequest) {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -46,15 +38,8 @@ export async function POST(request: NextRequest) {
   try {
     if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
-      const submissionId = sessionSubmissionId(session);
-      if (submissionId && session.payment_status === "paid") {
-        await markSubmissionPaid(submissionId, {
-          stripeCheckoutSessionId: session.id,
-          stripePaymentIntentId:
-            typeof session.payment_intent === "string" ? session.payment_intent : undefined,
-          stripeCustomerId: typeof session.customer === "string" ? session.customer : undefined
-        });
-      }
+      // Marks the record paid, or rebuilds it from Stripe if the local file was reset.
+      await recordPaidSession(session);
     }
 
     if (event.type === "checkout.session.expired") {

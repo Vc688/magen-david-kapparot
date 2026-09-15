@@ -191,6 +191,19 @@ export async function createSubmission(input: CheckoutInput, content: SiteConten
   });
 }
 
+/** Inserts a fully-formed record (used when recovering a paid session from Stripe). */
+export async function insertSubmission(submission: Submission): Promise<void> {
+  await withWriteLock(async () => {
+    await ensureDataFiles();
+    const file = await readJson<SubmissionsFile>(submissionsPath, { submissions: [] });
+    if (file.submissions.some((candidate) => candidate.id === submission.id)) {
+      return;
+    }
+    file.submissions.unshift(submission);
+    await writeJson(submissionsPath, file);
+  });
+}
+
 export async function attachCheckoutSession(id: string, checkoutSessionId: string): Promise<void> {
   await updateSubmission(id, (submission) => {
     submission.stripeCheckoutSessionId = checkoutSessionId;

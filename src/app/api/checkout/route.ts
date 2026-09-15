@@ -119,6 +119,7 @@ export async function POST(request: NextRequest) {
     const metadata = {
       submissionId: submission.id,
       campaign: "kapparot",
+      donorName: clip(submission.donor.name, 200),
       nameCount: String(count),
       names: clip(namesSummary)
     };

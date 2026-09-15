@@ -2,6 +2,7 @@
 
 import {
   ClipboardList,
+  CloudDownload,
   Download,
   Lock,
   LogOut,
@@ -78,6 +79,24 @@ export default function AdminDashboard() {
     }
     setPassword("");
     await load();
+  }
+
+  async function syncFromStripe() {
+    setLoading(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/admin/sync", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Sync failed.");
+      const r = data.result as { scanned: number; added: string[]; markedPaid: string[]; alreadyCurrent: number };
+      setMessage(
+        `Stripe sync: ${r.scanned} paid checkout${r.scanned === 1 ? "" : "s"} found — ${r.added.length} recovered, ${r.markedPaid.length} marked paid, ${r.alreadyCurrent} already up to date.`
+      );
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Sync failed.");
+      setLoading(false);
+    }
   }
 
   async function logout() {
@@ -174,6 +193,15 @@ export default function AdminDashboard() {
             <RefreshCw size={17} className={loading ? "spin" : ""} />
             Refresh
           </button>
+          <button
+            className="btn btn-ghost"
+            onClick={syncFromStripe}
+            disabled={loading}
+            title="Pull every paid Kapparot checkout from Stripe and fix any missing or pending records"
+          >
+            <CloudDownload size={17} />
+            Sync from Stripe
+          </button>
           <button className="btn btn-ghost" onClick={logout}>
             <LogOut size={17} />
             Logout
@@ -226,6 +254,15 @@ export default function AdminDashboard() {
               </select>
             </div>
             {message ? <p className="status-message">{message}</p> : null}
+            {statusFilter === "paid" && submissions.length > filtered.length ? (
+              <p className="muted small" style={{ margin: "0 0 12px" }}>
+                {submissions.length - filtered.length} non-paid (pending / expired / canceled) hidden —{" "}
+                <button className="link-button" onClick={() => setStatusFilter("all")}>
+                  show all statuses
+                </button>
+                . If someone paid but shows as pending, click <strong>Sync from Stripe</strong>.
+              </p>
+            ) : null}
             <div className="orders-list">
               {filtered.length === 0 ? (
                 <p className="muted">No submissions match this view.</p>

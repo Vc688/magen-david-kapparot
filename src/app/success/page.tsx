@@ -5,8 +5,9 @@ import Link from "next/link";
 import SiteFooter from "@/components/SiteFooter";
 import { fillCopy, getSiteContent } from "@/lib/content";
 import { formatMoney } from "@/lib/money";
+import { recordPaidSession } from "@/lib/reconcile";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
-import { getSubmissionByCheckoutSession, markSubmissionPaid } from "@/lib/store";
+import { getSubmissionByCheckoutSession } from "@/lib/store";
 import type { Submission } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -19,20 +20,14 @@ export const dynamic = "force-dynamic";
 async function resolveSubmission(sessionId?: string): Promise<Submission | undefined> {
   if (!sessionId) return undefined;
   let submission = await getSubmissionByCheckoutSession(sessionId);
-  if (submission && submission.status !== "paid" && isStripeConfigured()) {
+  if (submission?.status !== "paid" && isStripeConfigured()) {
     try {
       const session = await getStripe().checkout.sessions.retrieve(sessionId);
-      if (session.payment_status === "paid") {
-        await markSubmissionPaid(submission.id, {
-          stripeCheckoutSessionId: session.id,
-          stripePaymentIntentId:
-            typeof session.payment_intent === "string" ? session.payment_intent : undefined,
-          stripeCustomerId: typeof session.customer === "string" ? session.customer : undefined
-        });
-        submission = await getSubmissionByCheckoutSession(sessionId);
-      }
+      // Marks paid, or rebuilds the record from Stripe if it went missing.
+      await recordPaidSession(session);
+      submission = await getSubmissionByCheckoutSession(sessionId);
     } catch {
-      // Leave as-is; the webhook will reconcile.
+      // Leave as-is; the webhook or an admin "Sync from Stripe" will reconcile.
     }
   }
   return submission;

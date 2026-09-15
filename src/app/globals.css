@@ -949,6 +949,15 @@ input[type="checkbox"] {
   margin-top: 12px;
 }
 
+.link-button {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--brand-dark);
+  font-weight: 700;
+  text-decoration: underline;
+}
+
 .check-inline {
   display: inline-flex;
   align-items: center;
